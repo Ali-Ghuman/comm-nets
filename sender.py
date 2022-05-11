@@ -55,62 +55,72 @@ class RealSender(Sender):
     packetSize = 10
     timer = Timer(1, 1)
 
-    #99,999 
-    #1000
+    # used to make sure that the packet has no errors after transmission
     def checkSum(self, data): 
         hashVal = 0
         for char in data:
             hashVal = hashVal*31 + (ord(char) - ord('a'))
-        hashVal = str(hashVal % 10000000000)
-        return '0' * (10 - len(hashVal)) + hashVal
+        hashVal = str(hashVal % 10000000000) #make sure the length of the string is 10
+        return '0' * (10 - len(hashVal)) + hashVal #zero pad for convenience
 
 
-    def makePacket(self, data, nextseqnum): 
-        paddedSeqNum = '0' * (5 - len(str(nextseqnum))) + str(nextseqnum)
-        checkSum = self.checkSum(str(data) + paddedSeqNum)
-        return data + bytearray(paddedSeqNum + checkSum, 'utf-8')
+    def makePacket(self, data, nextseqnum):  #function to make the packet to send 
+        paddedSeqNum = '0' * (5 - len(str(nextseqnum))) + str(nextseqnum) 
+        # the largest number is 99,999 which is 5 digits, so make sure the seq is always 
+        # 5 digits for convenience 
+
+        checkSum = self.checkSum(str(data) + paddedSeqNum) #get a checksum of the data + seq
+        return data + bytearray(paddedSeqNum + checkSum, 'utf-8') #the packet we want to send
         
 
     def resend(self, data): 
-        self.timer = Timer(self.timeout, self.resend, [data])
-        self.timer.daemon = True 
-        self.timer.start()
-        for i in range(self.base, self.nextseqnum):
+        self.timer = Timer(self.timeout, self.resend, [data]) 
+        # set up a new timer to resend the data 
+        self.timer.daemon = True  # used to make sure the thread dies
+        self.timer.start() # start the timer 
+
+        # using go-back-N, send all the data from base to nextseqnum
+        for i in range(self.base, self.nextseqnum): 
             self.simulator.u_send(self.makePacket(data[i], i))
 
         sys.exit(0)
 
     def send(self, data): 
         packets = []
+        # split up the data into packetsized pieces
         for i in range(0, len(data), self.packetSize):
             packets.append(data[i:i + self.packetSize])
+
         while True: 
             try: 
-                if self.base == len(packets): # if we receive all the ACKs
+                if self.base == len(packets): # if we receive all the ACKs we're done
                     break
 
+                # if we're not finished, make a packet and send it
                 if self.nextseqnum < self.base + self.N and self.nextseqnum < len(packets): 
                     packet = self.makePacket(packets[self.nextseqnum], self.nextseqnum)
                     self.simulator.u_send(packet)
 
+                    # used to set up the timer if proper conditions are met 
                     if self.base == self.nextseqnum:
                         self.timer = Timer(self.timeout, self.resend, [packets])
                         self.timer.daemon = True 
                         self.timer.start()
-                    self.nextseqnum += 1
+                    self.nextseqnum += 1 #update the sequence number
             except socket.timeout:
                 sys.exit()
             
             try: 
-                ack = self.simulator.u_receive()  
+                ack = self.simulator.u_receive() # wait to receive the packet 
 
+                # check the checksum of the ack received 
                 if str(ack[-10:]) == self.checkSum(str(ack[:-10])):
-                    ack_value = int(str(ack[:-10]))
-                    self.base = ack_value + 1
+                    ack_value = int(str(ack[:-10])) #get the ack value 
+                    self.base = ack_value + 1 # update the base value w the new ack value
 
-                    if self.base == self.nextseqnum:
+                    if self.base == self.nextseqnum: # cancel the timer
                         self.timer.cancel()
-                    else: 
+                    else: # resend the packet if it's out of order
                         self.timer.cancel()
                         self.timer = Timer(self.timeout, self.resend, [packets])
                         self.timer.daemon = True 

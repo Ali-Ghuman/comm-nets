@@ -51,34 +51,36 @@ class RealReceiver(Receiver):
     
     expectedseqnum = 0
 
-    def checkSum(self, data): 
+    def checkSum(self, data):  # same checksum as sender
         hashVal = 0
         for char in data:
             hashVal = hashVal*31 + (ord(char) - ord('a'))
         hashVal = str(hashVal % 10000000000)
         return '0' * (10 - len(hashVal)) + hashVal
 
-    def receive(self):
+    def receive(self): 
         self.logger.info("Receiving on port: {} and replying with ACK on port: {}".format(self.inbound_port, self.outbound_port))
 
         while True: 
             try:    
-                data = self.simulator.u_receive() 
-                seqnumreceived = data[-15:-10]
+                data = self.simulator.u_receive() # get the packet from the receiver
+                seqnumreceived = data[-15:-10] # extract the seq number
 
-                if data[-10:] == self.checkSum(str(data[:-10])): 
-                    seqnumdecoded = int(seqnumreceived.decode())
+                if data[-10:] == self.checkSum(str(data[:-10])):  
+                    # check the data against its checksum version
+                    seqnumdecoded = int(seqnumreceived.decode()) #get the actual number
 
-                    if self.expectedseqnum == seqnumdecoded:
-                        sys.stdout.write(data[:-15])
-                        seqchecksum = self.checkSum(str(seqnumreceived))
-                        self.simulator.u_send(bytes(str(seqnumreceived) + seqchecksum))  
+                    if self.expectedseqnum == seqnumdecoded: #make sure its correct
+                        sys.stdout.write(data[:-15]) # write the data 
+                        seqchecksum = self.checkSum(str(seqnumreceived)) # start making the packet
+                        # send the bytes w the received seqnumreceived and it's checksum version
+                        self.simulator.u_send(bytes(str(seqnumreceived) + seqchecksum)) 
                         self.logger.info("SeqNumReceived {}, Decoded {} ".format(seqnumreceived, seqchecksum))
-                        self.expectedseqnum += 1
+                        self.expectedseqnum += 1 #update the sequence number
 
                     else: 
-                        repeatAck = str(self.expectedseqnum - 1)
-                        seqchecksum = self.checkSum("0" * (5-len(repeatAck)) + repeatAck)
+                        repeatAck = str(self.expectedseqnum - 1) # send an ack of the previous value
+                        seqchecksum = self.checkSum("0" * (5-len(repeatAck)) + repeatAck) 
                         self.simulator.u_send(bytearray(repeatAck + seqchecksum, encoding="utf8"))  
                 else: 
                     continue
